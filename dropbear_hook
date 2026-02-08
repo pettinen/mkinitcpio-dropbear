@@ -1,19 +1,14 @@
-#!/usr/bin/ash
+run_hook() {
+    mkdir -p /dev/pts/
+    mount -t devpts devpts /dev/pts/
 
-run_hook ()
-{
-  [ -d /dev/pts ] || mkdir -p /dev/pts
-  mount -t devpts devpts /dev/pts
-
-  echo "Starting dropbear"
-  /usr/sbin/dropbear -E -s -j -k
+    /usr/bin/dropbear -Esjk -p 53135 -r /etc/dropbear/dropbear_ed25519_host_key
 }
 
-run_cleanuphook ()
-{
-    umount /dev/pts
-    rm -R /dev/pts
-    if [ -f /var/run/dropbear.pid ]; then
-        kill `cat /var/run/dropbear.pid`
+run_cleanuphook() {
+    umount /dev/pts/
+    rm -r /dev/pts/
+    if [[ -f /var/run/dropbear.pid ]]; then
+        kill "$(cat /var/run/dropbear.pid)"
     fi
 }

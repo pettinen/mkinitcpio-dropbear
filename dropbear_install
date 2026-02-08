@@ -1,96 +1,43 @@
-#!/bin/bash
+function build {
+    if [[ ! -r /etc/dropbear/root_key || ! -s /etc/dropbear/root_key ]]; then
+        echo '/etc/dropbear/root_key does not exist; exiting'
+        return 0
+    fi
 
-get_fingerprint() {
-  local keyfile="$1"
-  dropbearkey -y -f "${keyfile}" | sed -n '/^Fingerprint:/ {s/Fingerprint: *//; p}'
+    if [[ -z $TMPDIR ]]; then
+        TMPDIR=/tmp/dropbear_initrd_encrypt
+    fi
+    mkdir -p $TMPDIR
+
+    umask 0022
+
+    mkdir -p /etc/dropbear/
+
+    local keyfile=/etc/dropbear/dropbear_ed25519_host_key
+    if [[ ! -s $keyfile ]]; then
+        echo 'Generating Ed25519 host key for dropbear...'
+        dropbearkey -t ed25519 -f "$keyfile"
+        chmod +r "$keyfile.pub"
+    fi
+
+    add_checked_modules /drivers/net/
+    add_binary rm
+    add_binary killall
+    add_binary dropbear
+
+    add_dir /root/.ssh/
+    cat /etc/dropbear/root_key > "$BUILDROOT/root/.ssh/authorized_keys"
+
+    add_full_dir /etc/dropbear/
+    add_file /lib/libnss_files.so.2
+    add_dir /var/run/
+    add_dir /var/log/
+    touch "$BUILDROOT/var/log/lastlog"
+
+    add_runscript
 }
 
-display_fingerprints() {
-  local keyfile
-
-  for keyfile in "/etc/dropbear/dropbear_rsa_host_key" "/etc/dropbear/dropbear_ecdsa_host_key" ; do
-      if [ -s "${keyfile}" ] ; then
-	  echo "$(basename "${keyfile}") : $(get_fingerprint "${keyfile}")"
-      fi
-  done
-}
-
-copy_openssh_keys() {
-  local osshrsa="/etc/ssh/ssh_host_rsa_key"
-  local osshecdsa="/etc/ssh/ssh_host_ecdsa_key"
-
-  local dbpre="/etc/dropbear/dropbear_"
-
-  local return_code=1
-
-  if [ -s "$osshrsa" ]; then
-      dropbearconvert openssh dropbear $osshrsa ${dbpre}rsa_host_key
-      return_code=0
-  fi
-
-  if [ -s "$osshecdsa" ]; then
-      dropbearconvert openssh dropbear $osshecdsa ${dbpre}ecdsa_host_key
-      return_code=0
-  fi
-
-  return $return_code
-}
-
-generate_keys() {
-  local keyfile keytype
-  for keytype in rsa ecdsa ; do
-      keyfile="/etc/dropbear/dropbear_${keytype}_host_key"
-      if [ ! -s "$keyfile" ]; then
-	  echo "Generating ${keytype} host key for dropbear ..."
-	  dropbearkey -t "${keytype}" -f "${keyfile}"
-      fi
-  done
-}
-
-build ()
-{
-  #
-  # Begin real processing
-  #
-
-  # Are we even needed?
-  if [ ! -r "/etc/dropbear/root_key" -o ! -s "/etc/dropbear/root_key" ]; then
-    echo "There is no root key in /etc/dropbear/root_key existent; exit"
-    return 0
-  fi
-
-  # if TMPDIR is set leave it alone otherwise set
-  [ -z $TMPDIR ] && TMPDIR='/tmp/dropbear_initrd_encrypt'
-
-  # check if TMPDIR exsists if not make it
-  [ -d $TMPDIR ] || mkdir -p $TMPDIR
-
-  umask 0022
-
-  [ -d /etc/dropbear ] && mkdir -p /etc/dropbear
-
-  copy_openssh_keys || generate_keys
-  display_fingerprints
-
-  add_checked_modules "/drivers/net/"
-  add_binary "rm"
-  add_binary "killall"
-  add_binary "dropbear"
-
-  add_dir "/root/.ssh"
-  cat /etc/dropbear/root_key > "${BUILDROOT}"/root/.ssh/authorized_keys
-
-  add_full_dir "/etc/dropbear"
-  add_file "/lib/libnss_files.so.2"
-  add_dir "/var/run"
-  add_dir "/var/log"
-  touch "${BUILDROOT}"/var/log/lastlog
-
-  add_runscript
-}
-
-help ()
-{
+function help {
     cat<<HELPEOF
 This hook is meant to be used in conjunction with mkinitcpio-netconf and/or
 mkinitcpio-ppp. It DOES NOT provide any default shell. It will only install
